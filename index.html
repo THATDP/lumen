@@ -1,80 +1,28 @@
-<!doctype html>
-<html lang="pt-BR">
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lumen — compartilhamento de tela</title>
-<link rel="stylesheet" href="./assets/css/base.css">
-<link rel="stylesheet" href="./assets/css/studio.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumen 2.0 — Comunicação, Colaboração e Jogos</title>
+  <link rel="stylesheet" href="assets/css/design-tokens.css" />
+  <link rel="stylesheet" href="assets/css/reset.css" />
+  <link rel="stylesheet" href="assets/css/typography.css" />
+  <link rel="stylesheet" href="assets/css/animations.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/components/buttons.css" />
+  <link rel="stylesheet" href="assets/css/components/panels.css" />
+  <link rel="stylesheet" href="assets/css/components/dialogs.css" />
+  <link rel="stylesheet" href="assets/css/components/notifications.css" />
+  <link rel="stylesheet" href="assets/css/components/forms.css" />
+  <link rel="stylesheet" href="assets/css/components/menus.css" />
+  <link rel="stylesheet" href="assets/css/components/chat.css" />
+  <link rel="stylesheet" href="assets/css/components/games.css" />
+  <link rel="stylesheet" href="assets/css/components/player.css" />
+  <link rel="stylesheet" href="assets/css/pages/home.css" />
+  <link rel="stylesheet" href="assets/css/pages/room.css" />
 </head>
 <body>
-<section id="welcome"><div class="welcome-shell">
-  <div class="hero-panel">
-    <div class="hero-top"><div class="hero-brand"><span class="brand-mark"></span><b>LUMEN</b></div><span class="hero-tag">A LITTLE MORE HUMAN</span></div>
-    <div class="hero-copy"><div class="eyebrow"><span></span> UM ESPAÇO PARA ESTAR JUNTO</div><h2>Boas ideias<br>começam <em>aqui.</em></h2><p>Conversas mais próximas, ideias compartilhadas e um espaço que é todo seu.</p></div>
-    <div class="hero-bottom"><span><i></i> FEITO PARA CONECTAR</span><span>01 / 01</span></div>
-  </div><div class="card">
-  <div class="card-top"><div class="brand"><i></i>Lumen <span class="brand-sub">/ SEU ESPAÇO</span></div><button class="studio-trigger quiet" type="button">✦ &nbsp;Personalizar</button></div>
-  <div class="prefs"></div>
-  <div class="card-heading"><div class="eyebrow">BEM-VINDO AO LUMEN</div><h1>Mostre sua tela. Sem cadastro.</h1></div>
-  <p>Escolha um nome e conecte-se. Sem cadastro, e-mail ou telefone.</p>
-  <label>Nickname<input id="nick" maxlength="20" autocomplete="off" placeholder="Como devemos te chamar?"></label>
-  <details class="room-options"><summary>Opções da sala <span>Nome, privacidade e senha</span></summary>
-  <div class="row"><input id="rname" maxlength="40" placeholder="Nome da sala (opcional)"><label class="chk"><input type="checkbox" id="rpriv" checked>Privada</label></div>
-  <input id="rdesc" maxlength="160" placeholder="Descrição da sala (opcional)" aria-label="Descrição da sala (opcional)">
-  <input id="rpassword" type="password" maxlength="128" placeholder="Senha para criar sala (opcional)" aria-label="Senha para criar sala (opcional)" autocomplete="new-password">
-  </details>
-  <button id="create" class="btn pri">Criar sala</button>
-  <div class="or">ou entre com um código</div>
-  <div class="row"><input id="code" maxlength="6" placeholder="Código da sala" style="text-transform:uppercase"><button id="join" class="btn">Entrar</button></div>
-  <details class="room-options join-options"><summary>A sala tem senha?</summary><input id="join-password" type="password" maxlength="128" placeholder="Senha da sala (se houver)" aria-label="Senha da sala (se houver)" autocomplete="off"></details>
-  <p id="wstatus" class="mu" role="status" hidden></p><p id="werr" class="err" role="alert"></p><div id="pubs"></div>
-</div></div></section>
-
-<main id="app" hidden>
-<header>
-  <div class="brand"><i></i><span id="rn"></span></div>
-  <button id="codeBtn" class="chip" title="Copiar link de convite"></button>
-  <button id="lockBtn" class="ib" data-i="lock" title="Trancar/destrancar sala" hidden></button>
-  <span class="sp"></span><div id="tabs"></div><div class="prefs"></div>
-  <button class="studio-trigger chip" type="button">✦ &nbsp;Personalizar</button>
-  <button id="setBtn" class="ib" data-i="gear" title="Configurações" aria-label="Configurações"></button>
-</header>
-<div class="main">
-  <div class="left">
-    <div id="stage"><video id="vid" autoplay playsinline></video>
-      <div id="empty"><b>Nenhuma transmissão agora</b>Use “Compartilhar tela” (S) para mostrar uma tela, janela ou aba.</div>
-      <div id="viewers" hidden></div>
-      <div id="stbar"><span class="mu" id="zl">100%</span><button class="ib" id="zo" aria-label="Diminuir zoom">−</button><button class="ib" id="zi" aria-label="Aumentar zoom">+</button><input type="range" id="sv" min="0" max="100" value="100" aria-label="Volume da transmissão"><button class="ib" id="fs" data-i="full" aria-label="Tela cheia"></button></div>
-    </div>
-    <div id="tiles"></div>
-  </div>
-  <aside class="side">
-    <nav><button data-p="chat" class="on">Chat</button><button data-p="ppl">Pessoas (<span id="pc">1</span>)</button></nav>
-    <div id="chat"><div id="msgs" aria-live="polite"></div><button id="unread" class="chip" hidden>Novas mensagens ↓</button><span id="send-status" class="mu" role="status" hidden></span><form id="cf"><input id="ci" maxlength="500" placeholder="Mensagem" autocomplete="off"><button class="ib" data-i="send" aria-label="Enviar"></button></form></div>
-    <div id="ppl" hidden></div>
-  </aside>
-</div>
-<footer>
-  <button id="bMic" class="ib off" data-i="micoff" title="Microfone (M)" aria-label="Microfone"></button>
-  <button id="bCam" class="ib off" data-i="cam" title="Câmera (V)" aria-label="Câmera"></button>
-  <button id="bShare" class="ib" data-i="share" title="Compartilhar tela (S)" aria-label="Compartilhar tela"></button>
-  <button id="bRx" class="ib" data-i="smile" title="Reações" aria-label="Reações"></button>
-  <button id="bLeave" class="ib leave" data-i="leave" title="Sair da sala" aria-label="Sair da sala"></button>
-  <div id="rx" hidden></div>
-</footer>
-</main>
-<div id="toasts"></div><div id="banner" hidden></div>
-
-<dialog id="studio" aria-labelledby="studio-title"><div class="studio-head"><div><span class="eyebrow">LUMEN / STUDIO</span><h2 id="studio-title">Seu espaço, do seu jeito.</h2><p>Preferências guardadas apenas neste dispositivo.</p></div><button class="ib" id="studio-close" aria-label="Fechar">✕</button></div><div class="studio-layout"><nav class="studio-nav" aria-label="Personalização"></nav><div class="studio-content" id="studio-content"></div></div></dialog>
-
-<dialog id="dlg"><div class="dh"><b>Configurações</b><button class="ib" id="dx" aria-label="Fechar">✕</button></div><div id="sbody"></div></dialog>
-
-<script src="./assets/js/core.js"></script>
-<script src="./assets/js/connection.js"></script>
-<script src="./assets/js/rtc.js"></script>
-<script src="./assets/js/media.js"></script>
-<script src="./assets/js/ui.js"></script>
-<script src="./assets/js/settings.js"></script>
-<script src="./assets/js/studio.js"></script>
+  <div id="app" class="app-shell"></div>
+  <script type="module" src="assets/js/core/app.js"></script>
 </body>
 </html>

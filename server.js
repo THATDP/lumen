@@ -35,7 +35,7 @@ const server = http.createServer((q, s) => {
   // Serve only the public entry point and explicitly scoped static assets.
   const asset = u.pathname.replace(/^\/lumen(?=\/)/, '');
   const isEntry = ['/', '/lumen/', '/index.html'].includes(u.pathname);
-  if (!isEntry && !/^\/assets\/(?:css\/[a-z0-9-]+\.css|js\/[a-z0-9-]+\.js|img\/[a-z0-9-]+\.jpg)$/.test(asset)) return s.writeHead(404).end('404');
+  if (!isEntry && !/^\/assets\/(?:css\/(?:[a-z0-9-]+\/)*[a-z0-9-]+\.css|js\/(?:[a-z0-9-]+\/)*[a-z0-9-]+\.js|img\/[a-z0-9-]+\.jpg)$/.test(asset)) return s.writeHead(404).end('404');
   const file = isEntry ? 'index.html' : asset.slice(1);
   fs.readFile(path.join(__dirname, file), (e, d) => {
     if (e) return s.writeHead(404).end('Not found');
@@ -139,9 +139,52 @@ function onMsg(p, m) {
     }
     case 'signal': { const to = r.peers.get(m.to); return to && to.send({ t: 'signal', from: p.id, d: m.d }); }
     case 'chat': {
-      const text = String(m.text || '').trim().slice(0, 500), now = Date.now();
-      p.rl = (p.rl || []).filter(x => now - x < 5000); if (!text) return; if (p.rl.length >= 8) return err('rate_limit', 'Muitas mensagens. Aguarde um pouco e tente novamente.'); p.rl.push(now);
-      return bcast(r, { t: 'chat', id: p.id, nick: p.nick, text, ts: now });
+      const now = Date.now();
+      p.rl = (p.rl || []).filter(x => now - x < 5000);
+      if (p.rl.length >= 8) return err('rate_limit', 'Muitas mensagens. Aguarde um pouco e tente novamente.');
+      p.rl.push(now);
+      if (m.op === 'edit' && m.msgId) {
+        const text = String(m.text || '').trim().slice(0, 500);
+        if (!text) return;
+        return bcast(r, { t: 'chat', op: 'edit', msgId: String(m.msgId).slice(0, 32), id: p.id, text, ts: now });
+      }
+      if (m.op === 'del' && m.msgId) {
+        return bcast(r, { t: 'chat', op: 'del', msgId: String(m.msgId).slice(0, 32), id: p.id });
+      }
+      if (m.op === 'react' && m.msgId && m.emoji) {
+        return bcast(r, { t: 'chat', op: 'react', msgId: String(m.msgId).slice(0, 32), id: p.id, emoji: String(m.emoji).slice(0, 8) });
+      }
+      const text = String(m.text || '').trim().slice(0, 500);
+      if (!text) return;
+      const msgId = crypto.randomBytes(6).toString('hex');
+      const replyTo = m.replyTo ? String(m.replyTo).slice(0, 32) : null;
+      return bcast(r, { t: 'chat', op: 'new', msgId, id: p.id, nick: p.nick, text, replyTo, ts: now });
+    }
+    case 'typing': return bcast(r, { t: 'typing', id: p.id, nick: p.nick, v: !!m.v }, p);
+    case 'hand': {
+      p.st.hand = !!m.v;
+      return bcast(r, { t: 'state', id: p.id, st: p.st }, p);
+    }
+    case 'profile': {
+      if (!m.profile || typeof m.profile !== 'object') return;
+      const clean = {
+        color: typeof m.profile.color === 'string' ? m.profile.color.slice(0, 20) : undefined,
+        bio: typeof m.profile.bio === 'string' ? m.profile.bio.slice(0, 160) : undefined,
+        status: typeof m.profile.status === 'string' ? m.profile.status.slice(0, 32) : undefined,
+        avatar: typeof m.profile.avatar === 'string' && m.profile.avatar.length <= 25000 ? m.profile.avatar : undefined
+      };
+      p.st.profile = clean;
+      return bcast(r, { t: 'profile', id: p.id, profile: clean }, p);
+    }
+    case 'game': {
+      if (!m.game || typeof m.game !== 'string') return;
+      return bcast(r, { t: 'game', id: p.id, nick: p.nick, game: m.game.slice(0, 24), action: String(m.action || '').slice(0, 32), payload: m.payload || null }, p);
+    }
+    case 'media_room': {
+      return bcast(r, { t: 'media_room', id: p.id, nick: p.nick, action: String(m.action || '').slice(0, 24), payload: m.payload || null }, p);
+    }
+    case 'collab': {
+      return bcast(r, { t: 'collab', id: p.id, nick: p.nick, tool: String(m.tool || '').slice(0, 24), payload: m.payload || null }, p);
     }
     case 'react': return ['👍', '👏', '😂', '🔥', '😮', '❤️'].includes(m.e) && bcast(r, { t: 'react', id: p.id, nick: p.nick, e: m.e });
     case 'nick': {
