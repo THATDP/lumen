@@ -27,7 +27,7 @@ function applyShare(){
   v.applyConstraints({frameRate:{ideal:cfg.fps},height:{ideal:cfg.res}}).catch(()=>{});peers.forEach(shape);
 }
 const audioC=()=>({deviceId:cfg.mic?{exact:cfg.mic}:undefined,echoCancellation:cfg.echo,noiseSuppression:cfg.noise,autoGainControl:cfg.agc});
-const videoC=()=>({deviceId:cfg.cam?{exact:cfg.cam}:undefined,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}});
+const videoC=()=>({deviceId:cfg.cam?{exact:cfg.cam}:undefined,width:{ideal:Math.round(cfg.camres*16/9)},height:{ideal:cfg.camres},frameRate:{ideal:cfg.camfps}});
 
 const capturing=new Set();
 async function capture(k,fn){if(capturing.has(k))return null;capturing.add(k);const token=attempt;try{const stream=await fn();if(token!==attempt||!inRoom){stream.getTracks().forEach(t=>t.stop());return null}return stream}finally{capturing.delete(k)}}
@@ -36,7 +36,7 @@ async function toggleMic(){
     try{const stream=await capture('mic',()=>navigator.mediaDevices.getUserMedia({audio:audioC()}));if(!stream)return;addLocal('mic',stream)}catch(e){return fail(e,'o microfone')}
     meterOn(me,local.mic);
   }else{const t=local.mic.getAudioTracks()[0];t.enabled=!t.enabled}
-  sendState();renderAll();
+  sendState();renderAll();roomSound(myst().mic?'micOn':'micOff',true);
 }
 async function toggleCam(){
   if(local.cam){dropLocal('cam')}else{try{const stream=await capture('cam',()=>navigator.mediaDevices.getUserMedia({video:videoC()}));if(!stream)return;addLocal('cam',stream)}catch(e){return fail(e,'a câmera')}}
@@ -50,10 +50,10 @@ async function toggleShare(){
     const s=await capture('screen',()=>navigator.mediaDevices.getDisplayMedia({video:v,audio:cfg.sysAudio?{echoCancellation:false,noiseSuppression:false,autoGainControl:false}:false}));
     if(!s)return;addLocal('screen',s);const vt=s.getVideoTracks()[0];vt.contentHint=cfg.hint;vt.onended=stopShare;
     if(cfg.sysAudio&&!s.getAudioTracks().length)toast(tr('Esta fonte não oferece áudio. No Chrome, marque “Compartilhar áudio” no seletor.'));
-    view=me;sendState();renderAll();
+    view=me;sendState();renderAll();roomSound('shareStart',true);
   }catch(e){if(e.name!=='NotAllowedError'||!/dismiss|cancel/i.test(e.message))fail(e,'a tela')}
 }
-function stopShare(){if(!local.screen)return;dropLocal('screen');if(view===me)view=null;sendState();renderAll()}
+function stopShare(){if(!local.screen)return;dropLocal('screen');if(view===me)view=null;sendState();renderAll();roomSound('shareStop',true)}
 // Serializar trocas do mesmo dispositivo impede tracks e senders obsoletos.
 const swapQueues={};
 function swap(k){
@@ -76,9 +76,10 @@ async function swapDevice(k){
 function syncAudio(p){
   const s=streamOf(p,'voice');if(!p.au){p.au=new Audio();p.au.autoplay=true}
   if(p.au.srcObject!==(s||null)){p.au.srcObject=s||null;meterOn(p.id,s);if(s)p.au.play().catch(()=>toast(tr('Toque para ativar o áudio'),'err'))}
-  p.au.volume=Math.min(1,p.vol*cfg.out/100);
+  p.au.volume=p.localMuted?0:Math.min(1,p.vol*cfg.out/100);
   if(p.au.setSinkId)p.au.setSinkId(cfg.spk||'').catch(()=>{});
 }
+function applyOutputVolume(){const v=$('#vid');v.volume=(+$('#sv').value/100)*(cfg.out/100);peers.forEach(syncAudio)}
 const meters=new Map();
 function clearMeter(id){const m=meters.get(id);if(m)m.source.disconnect();meters.delete(id)}
 function meterOn(id,s){

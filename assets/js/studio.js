@@ -58,11 +58,11 @@
   }
   // Images are reduced before the explicitly authorized room transmission.
   window.lumenRoomProfile=async selection=>{
-    const result={bio:selection.bio?profile.bio:'',color:selection.color?profile.accent:''};
+    const result={name:selection.name?profile.name.trim().slice(0,40):'',status:selection.status||'',bio:selection.bio?profile.bio.trim().slice(0,160):'',color:selection.color?profile.accent:''};
     for(const key of ['avatar','banner']) if(selection[key]){
-      const blob=await imageStore('get',key);if(!blob)continue;
+      const blob=await imageStore('get',key);if(!blob)throw Error('missing '+key);
       const url=URL.createObjectURL(blob);
-      try{const image=new Image();image.src=url;await image.decode();const max=key==='avatar'?96:192,scale=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);let quality=.65;result[key]=canvas.toDataURL('image/jpeg',quality);while(result[key].length>(key==='avatar'?18000:26000)&&quality>.2){quality-=.1;result[key]=canvas.toDataURL('image/jpeg',quality)}}finally{URL.revokeObjectURL(url)}
+      try{const image=new Image();image.src=url;await image.decode();const max=key==='avatar'?96:192,scale=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);let quality=.65;result[key]=canvas.toDataURL('image/jpeg',quality);while(result[key].length>(key==='avatar'?18000:26000)){if(quality>.25)quality-=.1;else {const copy=document.createElement('canvas');copy.width=canvas.width;copy.height=canvas.height;copy.getContext('2d').drawImage(canvas,0,0);canvas.width=Math.max(1,Math.floor(canvas.width*.8));canvas.height=Math.max(1,Math.floor(canvas.height*.8));canvas.getContext('2d').drawImage(copy,0,0,canvas.width,canvas.height);quality=.5}result[key]=canvas.toDataURL('image/jpeg',quality)}}finally{URL.revokeObjectURL(url)}
     }
     return result;
   };

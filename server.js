@@ -5,6 +5,8 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const features = require('./room-features');
+const chessRoom = require('./chess-room');
+const mediaRoom = require('./media-room');
 const { promisify } = require('util');
 const scrypt = promisify(crypto.scrypt);
 let passwordWork=0;
@@ -41,7 +43,7 @@ const server = http.createServer((q, s) => {
   fs.readFile(path.join(__dirname, file), (e, d) => {
     if (e) return s.writeHead(404).end('Not found');
     const type = isEntry ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.jpg') ? 'image/jpeg' : 'text/javascript';
-    s.writeHead(200, { 'content-type': type + (file.endsWith('.jpg') ? '' : '; charset=utf-8'), 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); s.end(d);
+    s.writeHead(200, { 'content-type': type + (file.endsWith('.jpg') ? '' : '; charset=utf-8'), 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin' }); s.end(d);
   });
 });
 const wss = new WebSocketServer({ server, maxPayload: 65536, perMessageDeflate: false });
@@ -71,10 +73,10 @@ const bcast = (r, o, except) => r.peers.forEach(p => p !== except && p.send(o));
 function drop(p, why) {
   const r = p.room; if (!r || !r.peers.delete(p.id)) return;
   p.room = null; bcast(r, { t: 'left', id: p.id, nick: p.nick, why });
-  features.departed(r,p,bcast);
+  features.departed(r,p,bcast);chessRoom.departed(r,p,bcast);
   if (why === 'left' && p.uid) r.reservations.set(p.uid, {until:Date.now() + 60000,pid:p.pid});
   if (!r.peers.size) {
-    r.timer = setTimeout(() => { if (!r.peers.size) rooms.delete(r.code); }, 60000);
+    r.timer = setTimeout(() => { if (!r.peers.size) {chessRoom.cleanup(r);rooms.delete(r.code);} }, 60000);
     return;
   }
   if (p.role === 'host') {
@@ -99,7 +101,7 @@ async function joinRoom(p, m) {
       if(p.socket.readyState!==WebSocket.OPEN)return;
       let code;do code=Array.from({length:6},()=>ALPHA[crypto.randomInt(ALPHA.length)]).join('');while(rooms.has(code));
       r={code,name:String(m.name||'').trim().slice(0,40)||'Sala de '+nick,description:String(m.description||'').trim().slice(0,160),priv:m.priv!==false,locked:false,peers:new Map(),reservations:new Map(),timer:null,passwordHash,passwordSalt};
-      features.startRoom(r);rooms.set(code,r);
+      features.startRoom(r);chessRoom.startRoom(r);mediaRoom.startRoom(r);rooms.set(code,r);
     } else {
       r=rooms.get(String(m.code||'').trim().toUpperCase());
       if(!r)return err('no_room','Sala não encontrada. Confira o código.');
@@ -122,8 +124,8 @@ async function joinRoom(p, m) {
     if(active){drop(active,'replaced');active.socket.close()}
     clearTimeout(r.timer);r.timer=null;for(const [id,reservation] of r.reservations)if(reservation.until<=Date.now())r.reservations.delete(id);r.reservations.delete(uid);
     Object.assign(p,{uid,pid,nick,room:r,role:r.peers.size?'user':'host',st:{},profile:{}});r.peers.set(p.id,p);
-    p.send({t:'joined',id:p.id,pid:p.pid,...features.snapshot(r),role:p.role,room:{code:r.code,name:r.name,description:r.description,hasPassword:!!r.passwordHash,priv:r.priv,locked:r.locked},peers:[...r.peers.values()].filter(x=>x!==p).map(view)});
-    bcast(r,{t:'peer',peer:view(p)},p);
+    p.send({t:'joined',id:p.id,pid:p.pid,...features.snapshot(r),chess:chessRoom.publicState(r.chess),media:mediaRoom.snapshot(r),role:p.role,room:{code:r.code,name:r.name,description:r.description,hasPassword:!!r.passwordHash,priv:r.priv,locked:r.locked},peers:[...r.peers.values()].filter(x=>x!==p).map(view)});
+    bcast(r,{t:'peer',peer:view(p)},p);chessRoom.onJoin(r,p,bcast);
   } catch(error){if(error.code==='BUSY')err('rate_limit','Muitas tentativas. Aguarde um pouco e tente novamente.');else{console.error('Join failed:',error.message);err('server_error','Não foi possível entrar na sala. Tente novamente.')}}
   finally{p.joining=false}
 }
@@ -141,7 +143,12 @@ function onMsg(p, m) {
       return bcast(r, { t: 'state', id: p.id, st: p.st }, p);
     }
     case 'signal': { const to = r.peers.get(m.to); return to && to.send({ t: 'signal', from: p.id, d: m.d }); }
-    case 'profile': case 'chat': case 'chat_edit': case 'chat_delete': case 'chat_reaction': case 'game': return features.handle(r,p,m,bcast,err);
+    case 'typing': {
+      if(typeof m.active!=='boolean')return;const now=Date.now();if(p.typing===m.active&&now-(p.lastTyping||0)<2000)return;p.typing=m.active;p.lastTyping=now;return bcast(r,{t:'typing',id:p.id,nick:p.nick,active:m.active},p);
+    }
+    case 'media': return mediaRoom.handle(r,p,m,bcast,err);
+    case 'chess': return chessRoom.handle(r,p,m,bcast,err);
+    case 'profile': case 'chat': case 'chat_edit': case 'chat_delete': case 'chat_pin': case 'chat_reaction': case 'game': return features.handle(r,p,m,bcast,err);
     case 'react': return ['👍', '👏', '😂', '🔥', '😮', '❤️'].includes(m.e) && bcast(r, { t: 'react', id: p.id, nick: p.nick, e: m.e });
     case 'nick': {
       const nick = cleanNick(m.nick); if (!nick) return err('bad_nick', 'Nickname inválido.');

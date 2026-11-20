@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const EMOJI = ['👍','👏','😂','🔥','😮','❤️'];
 const MAX_HISTORY = 200;
-const publicMessage = m => ({ mid:m.mid,id:m.id,owner:m.owner,nick:m.nick,text:m.text,ts:m.ts,reply:m.reply,edited:m.edited,deleted:m.deleted,reactions:Object.fromEntries(Object.entries(m.reactions).map(([emoji,users])=>[emoji,[...users]])) });
+const publicMessage = m => ({ mid:m.mid,id:m.id,owner:m.owner,nick:m.nick,text:m.text,ts:m.ts,reply:m.reply,edited:m.edited,deleted:m.deleted,pinned:!!m.pinned,reactions:Object.fromEntries(Object.entries(m.reactions).map(([emoji,users])=>[emoji,[...users]])) });
 const publicGame = r => r.game && ({...r.game,board:[...r.game.board],players:r.game.players.map(p=>({...p}))});
 function startRoom(r){r.history=[];r.game=null}
 function snapshot(r){return {history:r.history.map(publicMessage),game:publicGame(r)}}
@@ -16,7 +16,7 @@ function handle(r,p,m,broadcast,err){
         if(typeof v!=='string'||v.length>max||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(v))return '';
         const bytes=Buffer.from(v.slice(v.indexOf(',')+1),'base64');return bytes.length>=3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255?v:'';
       };
-      p.profile={bio:typeof input.bio==='string'?input.bio.trim().slice(0,160):'',color:typeof input.color==='string'&&/^#[a-f0-9]{6}$/i.test(input.color)?input.color:'',avatar:validImage(input.avatar,18000),banner:validImage(input.banner,26000)};
+      p.profile={name:typeof input.name==='string'?input.name.trim().slice(0,40):'',status:['available','away','busy'].includes(input.status)?input.status:'',bio:typeof input.bio==='string'?input.bio.trim().slice(0,160):'',color:typeof input.color==='string'&&/^#[a-f0-9]{6}$/i.test(input.color)?input.color:'',avatar:validImage(input.avatar,18000),banner:validImage(input.banner,26000)};
       return broadcast(r,{t:'profile',id:p.id,profile:p.profile});
     }
     case 'chat': {
@@ -26,16 +26,21 @@ function handle(r,p,m,broadcast,err){
       const msg={mid:crypto.randomBytes(12).toString('hex'),id:p.id,owner:p.pid,nick:p.nick,text,ts:now,reply,edited:false,deleted:false,reactions:{}};
       r.history.push(msg);if(r.history.length>MAX_HISTORY)r.history.shift();return broadcast(r,{t:'chat',...publicMessage(msg)});
     }
+    case 'chat_pin': {
+      const msg=find(m.mid);if(!msg||msg.deleted||!['host','mod'].includes(p.role))return err('chat_forbidden','Somente anfitriões e moderadores podem destacar mensagens.');
+      const old=r.history.find(x=>x.pinned&&x!==msg);if(old){old.pinned=false;broadcast(r,{t:'chat_update',message:publicMessage(old)})}
+      msg.pinned=!msg.pinned;return broadcast(r,{t:'chat_update',message:publicMessage(msg)});
+    }
     case 'chat_edit': case 'chat_delete': {
       const msg=find(m.mid);if(!msg||msg.owner!==p.pid||msg.deleted)return err('chat_forbidden','Não é possível alterar esta mensagem.');
-      if(m.t==='chat_delete'){msg.text='';msg.deleted=true;msg.reactions={}}
+      if(m.t==='chat_delete'){msg.text='';msg.deleted=true;msg.pinned=false;msg.reactions={}}
       else {if(typeof m.text!=='string'||!m.text.trim()||m.text.trim().length>500)return err('bad_message','Mensagem inválida.');msg.text=m.text.trim();msg.edited=true}
       return broadcast(r,{t:'chat_update',message:publicMessage(msg)});
     }
     case 'chat_reaction': {
       const msg=find(m.mid);if(!msg||msg.deleted||!EMOJI.includes(m.emoji))return;
       const users=msg.reactions[m.emoji]||(msg.reactions[m.emoji]=new Set());if(users.has(p.pid))users.delete(p.pid);else if(users.size<100)users.add(p.pid);if(!users.size)delete msg.reactions[m.emoji];
-      return broadcast(r,{t:'chat_update',message:publicMessage(msg)});
+      return broadcast(r,{t:'chat_update',actor:p.pid,message:publicMessage(msg)});
     }
     case 'game': {
       const action=m.action,g=r.game;

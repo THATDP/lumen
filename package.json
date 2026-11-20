@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/THATDP/lumen#readme",
   "dependencies": {
+    "chess.js": "^1.4.0",
     "ws": "^8.23.0"
   },
   "devDependencies": {

@@ -68,22 +68,26 @@ function handle(m){
     m.peers.forEach(i=>addPeer(i,true));
     $('#welcome').hidden=true;$('#app').hidden=false;history.replaceState(0,'','/lumen/?room='+room.code);
     $('#rn').textContent=room.name;$('#rn').title=room.description||room.name;$('#codeBtn').textContent=tr('Código ')+room.code;
-    roomJoined(m);sendState();renderAll();scheduleIceRefresh();sys(tr('Você entrou na sala.'));break;
-  case 'peer':roomSound('join',true);addPeer(m.peer,false);toast(m.peer.nick+tr(' entrou'));sys(m.peer.nick+tr(' entrou.'));renderAll();break;
-  case 'left':{const p=peers.get(m.id);if(p){clearPeer(p);peers.delete(m.id);if(view===m.id)view=null;toast(m.nick+tr(' saiu'));sys(m.nick+tr(' saiu.'));renderAll()}break}
-  case 'state':{const p=peers.get(m.id);if(p){if(m.st.share&&!p.st.share){p.waitingSince=Date.now();clearTimeout(p.statusTimer);p.statusTimer=setTimeout(()=>renderAll(),15000)}p.st=m.st;syncAudio(p);renderAll()}break}
+    window.lumenApplyLayout?.();roomJoined(m);sendState();renderAll();scheduleIceRefresh();sys(tr('Você entrou na sala.'));break;
+  case 'peer':roomSound('join',true);addPeer(m.peer,false);toast(m.peer.nick+tr(' entrou'));sys(m.peer.nick+tr(' entrou.'));renderAll();if(!chessState)renderChess(null);break;
+  case 'left':{const p=peers.get(m.id);if(p){roomSound('leave',true);showTyping({id:m.id,active:false});clearPeer(p);peers.delete(m.id);if(view===m.id)view=null;toast(m.nick+tr(' saiu'));sys(m.nick+tr(' saiu.'));renderAll();if(!chessState)renderChess(null)}break}
+  case 'state':{const p=peers.get(m.id);if(p){if(m.st.share!==p.st.share&&p.st.share!==undefined)roomSound(m.st.share?'shareStart':'shareStop',true);if(m.st.share&&!p.st.share){p.waitingSince=Date.now();clearTimeout(p.statusTimer);p.statusTimer=setTimeout(()=>renderAll(),15000)}p.st=m.st;syncAudio(p);renderAll()}break}
   case 'signal':onSignal(m.from,m.d);break;
-  case 'chat':addMsg(m);roomSound('message',m.id!==me);break;
-  case 'chat_update':updateMessage(m.message);break;
-  case 'game_state':renderGame(m.game);break;
-  case 'profile':if(m.id===me)myPublicProfile=m.profile;else {const p=peers.get(m.id);if(p)p.profile=m.profile}renderAll();break;
+  case 'chat':addMsg(m);roomSound(m.text.toLocaleLowerCase().includes('@'+myNick.toLocaleLowerCase())?'mention':'message',m.id!==me);break;
+  case 'chat_update':if(m.actor&&m.actor!==myPid)roomSound('reaction',true);updateMessage(m.message);break;
+  case 'typing':showTyping(m);break;
+  case 'game_state':if(m.game?.status==='playing'&&currentGame?.status==='waiting')roomSound('start',true);if(m.game&&['finished','draw'].includes(m.game.status)&&!['finished','draw'].includes(currentGame?.status))roomSound(m.game.status==='draw'?'draw':m.game.winner===myPid?'win':'lose',m.game.players.some(p=>p.id===myPid));renderGame(m.game);break;
+  case 'chess_state':if(m.chess?.status==='invited'&&m.chess.invited===myPid&&chessState?.status!=='invited')roomSound('invite',true);if(m.chess?.status==='playing'&&chessState?.status==='invited')roomSound('start',true);if(m.chess?.status==='finished'&&chessState?.status!=='finished')roomSound(m.chess.winner?(m.chess.winner===myPid?'win':'lose'):'draw',m.chess.players.some(p=>p.id===myPid));renderChess(m.chess);break;
+  case 'media_state':renderSharedMedia(m.media);break;
+  case 'profile':if(m.id===me)profileAcknowledged(m.profile);else {const p=peers.get(m.id);if(p)p.profile=m.profile}renderAll();refreshMessageProfiles();renderChess(chessState);break;
   case 'react':fly(m);break;
   case 'nick':{if(m.id===me){myNick=m.nick;LS.set('nick',m.nick)}else{const p=peers.get(m.id);if(p)p.nick=m.nick}renderAll();break}
-  case 'role':{if(m.id===me)role=m.role;else{const p=peers.get(m.id);if(p)p.role=m.role}renderAll();break}
+  case 'role':{if(m.id===me)role=m.role;else{const p=peers.get(m.id);if(p)p.role=m.role}renderAll();refreshMessageProfiles();renderSharedMedia(sharedMediaState);break}
   case 'room':room.locked=m.locked;toast(tr(m.locked?'Sala trancada':'Sala destrancada'));renderAll();break;
   case 'mute':if(local.mic){local.mic.getAudioTracks()[0].enabled=false;sendState();renderAll()}toast(m.by+tr(' silenciou seu microfone'));break;
   case 'kicked':kicked=true;leave(tr('Você foi removido da sala.'));break;
   case 'err':
+    if(inRoom)roomSound('important',true);
     if(m.code==='rate_limit')recoverChat();
     if(inRoom&&!joined){leave(serverError(m));}else if(!inRoom){werr(serverError(m));ws.close()}else toast(serverError(m),'err');break;
   }

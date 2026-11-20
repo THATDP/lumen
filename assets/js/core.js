@@ -139,7 +139,7 @@ function applyPreferences(){
 }
 applyPreferences();
 Object.assign(translations.en,{'Não foi possível receber a transmissão':'Unable to receive the stream','Parar compartilhamento (S)':'Stop sharing (S)','Toque para ativar o áudio':'Click to enable audio','O dispositivo foi desconectado.':'The device was disconnected.','Conectando à sala…':'Connecting to the room…'});
-const DEF={res:1080,fps:30,kbps:4000,hint:'detail',surface:'any',sysAudio:true,echo:true,noise:true,agc:true,mic:'',cam:'',spk:'',out:100,mirror:true};
+const DEF={res:1080,fps:30,kbps:4000,hint:'detail',surface:'any',sysAudio:true,echo:true,noise:true,agc:true,mic:'',cam:'',spk:'',out:100,mirror:true,camres:720,camfps:30,camfit:'cover'};
 const cfg={...DEF,...LS.get('cfg',{})};
 let uid=sessionStorage.getItem('lumen-uid');if(!uid){uid=crypto.randomUUID();sessionStorage.setItem('lumen-uid',uid)}
 let myNick=LS.get('nick','');
