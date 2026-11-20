@@ -228,3 +228,52 @@ test('responsive layout and keyboard access to personalization', {timeout:60000}
     await page.keyboard.press('Escape');assert.equal(await page.locator('#studio').isVisible(),false);
   }
 });
+
+test('authoritative room chat, consented profiles, game rules and isolation', async () => {
+  const a=client(), b=client(), c=client(), other=client();await Promise.all([a.open(),b.open(),c.open(),other.open()]);
+  try {
+    a.send({t:'join',nick:'Alice',uid:'features-a',create:true});const aj=await a.next('joined');
+    b.send({t:'join',nick:'Bob',uid:'features-b',code:aj.room.code});const bj=await b.next('joined');await a.next('peer');
+    other.send({t:'join',nick:'Other',uid:'features-other',create:true});await other.next('joined');
+    a.send({t:'chat',text:'hello <img src=x onerror=alert(1)> https://example.com'});const msg=await a.next('chat');await b.next('chat');
+    b.send({t:'chat_edit',mid:msg.mid,text:'forged'});assert.equal((await b.next('err')).code,'chat_forbidden');
+    other.send({t:'chat_delete',mid:msg.mid});assert.equal((await other.next('err')).code,'chat_forbidden');
+    a.send({t:'chat_edit',mid:msg.mid,text:'edited'});assert.equal((await b.next('chat_update')).message.text,'edited');await a.next('chat_update');
+    b.send({t:'chat_reaction',mid:msg.mid,emoji:'👍'});assert.deepEqual((await a.next('chat_update')).message.reactions['👍'],[bj.pid]);await b.next('chat_update');
+    b.send({t:'chat',text:'reply',reply:msg.mid});assert.equal((await a.next('chat')).reply,msg.mid);await b.next('chat');
+    a.send({t:'profile',profile:{bio:'Only selected',color:'#123456',avatar:'data:image/jpeg;base64,bad'}});const profile=await b.next('profile');await a.next('profile');assert.equal(profile.profile.bio,'Only selected');assert.equal(profile.profile.avatar,'');
+    c.send({t:'join',nick:'Carol',uid:'features-c',code:aj.room.code});const cj=await c.next('joined');await a.next('peer');await b.next('peer');assert.equal(cj.history.length,2);assert.equal(cj.peers.find(p=>p.id===aj.id).profile.bio,'Only selected');
+    a.send({t:'game',action:'start'});await Promise.all([a.next('game_state'),b.next('game_state'),c.next('game_state')]);
+    b.send({t:'game',action:'join'});const started=await a.next('game_state');assert.equal(started.game.status,'playing');await b.next('game_state');await c.next('game_state');
+    b.send({t:'game',action:'move',cell:0});assert.equal((await b.next('err')).code,'game_invalid');
+    c.send({t:'game',action:'move',cell:0});assert.equal((await c.next('err')).code,'game_invalid');
+    for(const [who,cell] of [[a,0],[b,3],[a,1],[b,4],[a,2]]){who.send({t:'game',action:'move',cell});const [state]=await Promise.all([a.next('game_state'),b.next('game_state'),c.next('game_state')]);if(cell===2){assert.equal(state.game.status,'finished');assert.equal(state.game.winner,aj.pid)}}
+    c.send({t:'game',action:'end'});assert.equal((await c.next('err')).code,'game_forbidden');
+    a.send({t:'game',action:'reset'});assert.equal((await a.next('game_state')).game.board.join(''),'');await b.next('game_state');await c.next('game_state');
+    b.socket.terminate();assert.equal((await a.next('left')).id,bj.id);assert.equal((await a.next('game_state')).game,null);await c.next('left');await c.next('game_state');
+    const reconnect=client();await reconnect.open();reconnect.send({t:'join',nick:'Bob',uid:'features-b',code:aj.room.code});const rejoined=await reconnect.next('joined');assert.equal(rejoined.pid,bj.pid);assert.equal(rejoined.history.length,2);
+    a.send({t:'chat_delete',mid:msg.mid});assert.equal((await reconnect.next('chat_update')).message.deleted,true);
+    reconnect.socket.close();
+  } finally {a.socket.close();b.socket.close();c.socket.close();other.socket.close()}
+});
+
+test('room controls, safe chat and multiplayer game in browser', {timeout:60000}, async () => {
+  const ctx=await browser.newContext(),a=await ctx.newPage(),b=await ctx.newPage();const errors=[];a.on('pageerror',e=>errors.push(e.message));b.on('pageerror',e=>errors.push(e.message));
+  try {
+    await Promise.all([a.goto(base+'/lumen/'),b.goto(base+'/lumen/')]);await a.locator('#welcome .prefs select').first().selectOption('pt-BR');await b.locator('#welcome .prefs select').first().selectOption('pt-BR');
+    await a.locator('#nick').fill('Alice');await a.locator('#create').click();await a.locator('#app').waitFor({state:'visible'});const code=await a.evaluate(()=>room.code);
+    await b.locator('#nick').fill('Bob');await b.locator('#code').fill(code);await b.locator('#join').click();await b.locator('#app').waitFor({state:'visible'});await a.waitForFunction(()=>peers.size===1);
+    await a.evaluate(()=>{window.__originalPeer=[...peers.values()][0].pc});await a.locator('#room-options-btn').click();await a.getByLabel('Vídeos').selectOption('grid');await a.getByLabel('Painel lateral').selectOption('left');await a.locator('#room-options-close').click();assert.equal(await a.locator('#tiles').getAttribute('data-mode'),'grid');assert.equal(await a.evaluate(()=>window.__originalPeer===[...peers.values()][0].pc),true);
+    await a.locator('#ci').fill('<img src=x onerror=alert(1)> https://example.com');await a.locator('#ci').press('Enter');await b.locator('.message-text').waitFor();assert.equal(await b.locator('#msgs img').count(),0);assert.equal(await b.locator('.message-text a').getAttribute('rel'),'noopener noreferrer');
+    await b.locator('.message-actions').getByRole('button',{name:'Responder'}).click();await b.locator('#ci').fill('Resposta');await b.locator('#ci').press('Enter');await a.getByText('Resposta',{exact:true}).waitFor();assert.ok(await a.locator('.reply-quote').count());
+    await b.locator('.message-actions').first().getByRole('button',{name:'Reagir com 👍'}).click();await a.waitForFunction(()=>document.querySelector('.message-actions [aria-label="Reagir com 👍"]').textContent.includes('1'));
+    a.once('dialog',dialog=>dialog.accept('Editada'));await a.locator('.message-actions').first().getByRole('button',{name:'Editar'}).click();await b.getByText('Editada',{exact:true}).waitFor();
+    a.once('dialog',dialog=>dialog.accept());await a.locator('.message-actions').first().getByRole('button',{name:'Excluir'}).click();await b.getByText('Mensagem excluída',{exact:true}).waitFor();
+    await a.locator('[data-p="game"]').click();await b.locator('[data-p="game"]').click();await a.getByRole('button',{name:'Criar partida'}).click();await b.getByRole('button',{name:'Entrar na partida'}).click();await a.getByRole('button',{name:'Casa 1'}).click();await b.waitForFunction(()=>document.querySelector('[aria-label="Casa 1 X"]'));
+    await a.locator('#app .studio-trigger').click();await a.getByRole('button',{name:/Perfil local/}).click();await a.getByLabel('Sobre você').fill('Privado');const png=await a.evaluate(()=>{const c=document.createElement('canvas');c.width=32;c.height=32;c.getContext('2d').fillRect(0,0,32,32);return c.toDataURL('image/png').split(',')[1]});await a.getByLabel(/Foto de perfil/).setInputFiles({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});await a.waitForFunction(()=>document.querySelector('.profile-avatar').style.backgroundImage.includes('blob:'));await a.getByRole('button',{name:'Salvar perfil',exact:true}).click();await a.locator('#studio-close').click();
+    assert.equal(await b.evaluate(()=>[...peers.values()][0].profile.bio||''),'');
+    await a.locator('#room-options-btn').click();await a.getByLabel('Cor',{exact:true}).check();await a.getByLabel('Foto',{exact:true}).check();await a.getByRole('button',{name:'Compartilhar selecionados'}).click();await b.waitForFunction(()=>[...peers.values()][0]?.profile?.color&&[...peers.values()][0]?.profile?.avatar?.startsWith('data:image/jpeg'));assert.equal(await b.evaluate(()=>[...peers.values()][0].profile.bio),'');await a.getByRole('button',{name:'Parar de compartilhar'}).click();await b.waitForFunction(()=>![...peers.values()][0]?.profile?.color);await a.locator('#room-options-close').click();
+    assert.equal(await a.evaluate(()=>!![...peers.values()][0].pc),true);await a.reload();await a.locator('#nick').fill('Alice');await a.locator('#code').fill(code);await a.locator('#join').click();await a.locator('#app').waitFor({state:'visible'});assert.equal(await a.locator('#tiles').getAttribute('data-mode'),'grid');
+    assert.deepEqual(errors,[]);
+  } finally {await a.close();await b.close()}
+});

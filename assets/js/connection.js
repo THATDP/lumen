@@ -68,12 +68,15 @@ function handle(m){
     m.peers.forEach(i=>addPeer(i,true));
     $('#welcome').hidden=true;$('#app').hidden=false;history.replaceState(0,'','/lumen/?room='+room.code);
     $('#rn').textContent=room.name;$('#rn').title=room.description||room.name;$('#codeBtn').textContent=tr('Código ')+room.code;
-    sendState();renderAll();scheduleIceRefresh();sys(tr('Você entrou na sala.'));break;
-  case 'peer':addPeer(m.peer,false);toast(m.peer.nick+tr(' entrou'));sys(m.peer.nick+tr(' entrou.'));renderAll();break;
+    roomJoined(m);sendState();renderAll();scheduleIceRefresh();sys(tr('Você entrou na sala.'));break;
+  case 'peer':roomSound('join',true);addPeer(m.peer,false);toast(m.peer.nick+tr(' entrou'));sys(m.peer.nick+tr(' entrou.'));renderAll();break;
   case 'left':{const p=peers.get(m.id);if(p){clearPeer(p);peers.delete(m.id);if(view===m.id)view=null;toast(m.nick+tr(' saiu'));sys(m.nick+tr(' saiu.'));renderAll()}break}
   case 'state':{const p=peers.get(m.id);if(p){if(m.st.share&&!p.st.share){p.waitingSince=Date.now();clearTimeout(p.statusTimer);p.statusTimer=setTimeout(()=>renderAll(),15000)}p.st=m.st;syncAudio(p);renderAll()}break}
   case 'signal':onSignal(m.from,m.d);break;
-  case 'chat':addMsg(m);break;
+  case 'chat':addMsg(m);roomSound('message',m.id!==me);break;
+  case 'chat_update':updateMessage(m.message);break;
+  case 'game_state':renderGame(m.game);break;
+  case 'profile':if(m.id===me)myPublicProfile=m.profile;else {const p=peers.get(m.id);if(p)p.profile=m.profile}renderAll();break;
   case 'react':fly(m);break;
   case 'nick':{if(m.id===me){myNick=m.nick;LS.set('nick',m.nick)}else{const p=peers.get(m.id);if(p)p.nick=m.nick}renderAll();break}
   case 'role':{if(m.id===me)role=m.role;else{const p=peers.get(m.id);if(p)p.role=m.role}renderAll();break}
@@ -88,5 +91,5 @@ function handle(m){
 function leave(msg){
   inRoom=false;joined=false;joinSecret='';setConnecting(false);attempt++;clearTimeout(retryTimer);clearTimeout(iceRefreshTimer);try{ws&&ws.close()}catch{}
   ['mic','cam','screen'].forEach(dropLocal);peers.forEach(clearPeer);peers.clear();tiles.forEach(t=>t.remove());tiles.clear();
-  recoverChat();unreadCount=0;$('#unread').hidden=true;view=null;lastWatch=null;if($('#dlg').open)$('#dlg').close();$('#app').hidden=true;$('#welcome').hidden=false;$('#banner').hidden=true;$('#msgs').replaceChildren();history.replaceState(0,'','/lumen/');if(msg)werr(msg);
+  resetRoomFeatures();recoverChat();unreadCount=0;$('#unread').hidden=true;view=null;lastWatch=null;if($('#dlg').open)$('#dlg').close();$('#app').hidden=true;$('#welcome').hidden=false;$('#banner').hidden=true;$('#msgs').replaceChildren();history.replaceState(0,'','/lumen/');if(msg)werr(msg);
 }

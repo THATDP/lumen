@@ -1,6 +1,6 @@
 'use strict';
 // Personalization stays on this device. Files are kept as blobs in IndexedDB,
-// never attached to room messages or sent to the signaling service.
+// never transmitted unless the user explicitly selects and shares them for a room.
 (() => {
   const t=(pt,en)=>language==='en'?en:pt;
   const $s=s=>document.querySelector(s);
@@ -56,6 +56,16 @@
     for(const key of ['avatar','banner','wall-home','wall-room','wall-settings','wall-profile']){try{const blob=await imageStore('get',key);if(blob)objectUrl(key,blob)}catch(error){console.warn('Local image storage unavailable',error);break}}
     applyWalls();
   }
+  // Images are reduced before the explicitly authorized room transmission.
+  window.lumenRoomProfile=async selection=>{
+    const result={bio:selection.bio?profile.bio:'',color:selection.color?profile.accent:''};
+    for(const key of ['avatar','banner']) if(selection[key]){
+      const blob=await imageStore('get',key);if(!blob)continue;
+      const url=URL.createObjectURL(blob);
+      try{const image=new Image();image.src=url;await image.decode();const max=key==='avatar'?96:192,scale=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);let quality=.65;result[key]=canvas.toDataURL('image/jpeg',quality);while(result[key].length>(key==='avatar'?18000:26000)&&quality>.2){quality-=.1;result[key]=canvas.toDataURL('image/jpeg',quality)}}finally{URL.revokeObjectURL(url)}
+    }
+    return result;
+  };
   function applyPalette(colors,effects){const style=document.documentElement.style;keys.forEach((k,i)=>style.setProperty('--'+k,colors[i]));const fx=effectsOf(effects);style.setProperty('--panel-opacity',fx.opacity+'%');style.setProperty('--r',fx.radius+'px');style.setProperty('--shadow-opacity',fx.shadow/100);style.setProperty('--glow-opacity',fx.glow+'%')}
   function applyActive(){
     const custom=customs.find(c=>c.id===active),colors=palettes[active]||custom?.colors;
@@ -120,7 +130,7 @@
     if(draft.id)buttons.push(button(t('Excluir','Delete'),()=>{if(!confirm(t('Excluir este tema?','Delete this theme?')))return;customs=customs.filter(c=>c.id!==draft.id);LS.set('lumen-custom-themes',customs);if(active===draft.id){active='';LS.set('lumen-active-theme','')}draft=null;applyActive();render()}));actions(...buttons);
   }
   function renderProfile(){
-    content.classList.add('profile');heading(t('Sua identidade, sob seu controle.','Your identity, under your control.'),t('Foto, banner e biografia ficam neste navegador. Apenas o nickname da sala é enviado aos participantes.','Your photo, banner and bio stay in this browser. Only your room nickname is shared with participants.'));
+    content.classList.add('profile');heading(t('Sua identidade, sob seu controle.','Your identity, under your control.'),t('Foto, banner e biografia ficam neste navegador até você escolher compartilhá-los na sala.','Your photo, banner and bio stay in this browser until you choose to share them in a room.'));
     const preview=el('div','profile-preview'),banner=el('div','profile-banner'),info=el('div','profile-info'),avatar=el('div','profile-avatar');
     const update=()=>{avatar.style.backgroundColor=profile.accent;banner.style.backgroundImage=urls.banner?`url("${urls.banner}")`:'';banner.replaceChildren();avatar.style.backgroundImage=urls.avatar?`url("${urls.avatar}")`:'';avatar.replaceChildren();for(const [node,key] of [[avatar,'avatar'],[banner,'banner']]){if(urls[key]){const img=el('img','profile-image');img.alt='';img.src=urls[key];img.style.objectPosition=`${profile[key+'X']}% ${profile[key+'Y']}%`;img.style.transform=`scale(${profile[key+'Zoom']/100})`;node.append(img)}else if(key==='avatar')node.textContent=(profile.name.trim()[0]||'✦').toUpperCase()}info.querySelector('strong').textContent=profile.name||t('Seu nome','Your name');info.querySelector('small').textContent=profile.username?'@'+profile.username:t('Perfil local','Local profile');info.querySelector('p').textContent=profile.bio};
     info.append(avatar,el('strong'),el('small'),el('p'));preview.append(banner,info);content.append(preview);update();

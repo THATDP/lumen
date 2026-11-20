@@ -4,6 +4,7 @@
 // A mídia usa conexões P2P ou um servidor TURN externo, nunca o servidor de sinalização.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
+const features = require('./room-features');
 const { promisify } = require('util');
 const scrypt = promisify(crypto.scrypt);
 let passwordWork=0;
@@ -64,13 +65,14 @@ setInterval(() => socks.forEach(p => { if (!p.alive) return p.socket.terminate()
 const norm = s => s.normalize('NFKC').trim().toLowerCase();               // "Player" == "PLAYER"
 const cleanNick = v => { const n = String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' '); return /^[\p{L}\p{N}_. -]{2,20}$/u.test(n) ? n : null; };
 const nickTaken = (r, nick, except) => [...r.peers.values()].find(x => x !== except && norm(x.nick) === norm(nick));
-const view = p => ({ id: p.id, nick: p.nick, role: p.role, st: p.st });
+const view = p => ({ id: p.id, pid:p.pid, nick: p.nick, role: p.role, st: p.st, profile:p.profile||{} });
 const bcast = (r, o, except) => r.peers.forEach(p => p !== except && p.send(o));
 
 function drop(p, why) {
   const r = p.room; if (!r || !r.peers.delete(p.id)) return;
   p.room = null; bcast(r, { t: 'left', id: p.id, nick: p.nick, why });
-  if (why === 'left' && p.uid) r.reservations.set(p.uid, Date.now() + 60000);
+  features.departed(r,p,bcast);
+  if (why === 'left' && p.uid) r.reservations.set(p.uid, {until:Date.now() + 60000,pid:p.pid});
   if (!r.peers.size) {
     r.timer = setTimeout(() => { if (!r.peers.size) rooms.delete(r.code); }, 60000);
     return;
@@ -97,7 +99,7 @@ async function joinRoom(p, m) {
       if(p.socket.readyState!==WebSocket.OPEN)return;
       let code;do code=Array.from({length:6},()=>ALPHA[crypto.randomInt(ALPHA.length)]).join('');while(rooms.has(code));
       r={code,name:String(m.name||'').trim().slice(0,40)||'Sala de '+nick,description:String(m.description||'').trim().slice(0,160),priv:m.priv!==false,locked:false,peers:new Map(),reservations:new Map(),timer:null,passwordHash,passwordSalt};
-      rooms.set(code,r);
+      features.startRoom(r);rooms.set(code,r);
     } else {
       r=rooms.get(String(m.code||'').trim().toUpperCase());
       if(!r)return err('no_room','Sala não encontrada. Confira o código.');
@@ -112,14 +114,15 @@ async function joinRoom(p, m) {
       }
     }
     if(p.socket.readyState!==WebSocket.OPEN||p.room)return;
-    const active=uid&&[...r.peers.values()].find(x=>x.uid===uid),returning=uid&&r.reservations.get(uid)>Date.now();
+    const active=uid&&[...r.peers.values()].find(x=>x.uid===uid),reserved=uid&&r.reservations.get(uid),returning=reserved&&reserved.until>Date.now();
     if(r.locked&&!returning&&!active)return err('locked','Esta sala está trancada pelo administrador.');
     if(r.peers.size>=MAX&&!active)return err('full','Sala cheia (limite de '+MAX+' participantes).');
     if(nickTaken(r,nick,active))return err('nick_taken','O nickname "'+nick+'" já está em uso nesta sala. Escolha outro.');
+    const pid=active?.pid||(returning&&reserved.pid)||crypto.randomBytes(12).toString('hex');
     if(active){drop(active,'replaced');active.socket.close()}
-    clearTimeout(r.timer);r.timer=null;for(const [id,expires] of r.reservations)if(expires<=Date.now())r.reservations.delete(id);r.reservations.delete(uid);
-    Object.assign(p,{uid,nick,room:r,role:r.peers.size?'user':'host',st:{}});r.peers.set(p.id,p);
-    p.send({t:'joined',id:p.id,role:p.role,room:{code:r.code,name:r.name,description:r.description,hasPassword:!!r.passwordHash,priv:r.priv,locked:r.locked},peers:[...r.peers.values()].filter(x=>x!==p).map(view)});
+    clearTimeout(r.timer);r.timer=null;for(const [id,reservation] of r.reservations)if(reservation.until<=Date.now())r.reservations.delete(id);r.reservations.delete(uid);
+    Object.assign(p,{uid,pid,nick,room:r,role:r.peers.size?'user':'host',st:{},profile:{}});r.peers.set(p.id,p);
+    p.send({t:'joined',id:p.id,pid:p.pid,...features.snapshot(r),role:p.role,room:{code:r.code,name:r.name,description:r.description,hasPassword:!!r.passwordHash,priv:r.priv,locked:r.locked},peers:[...r.peers.values()].filter(x=>x!==p).map(view)});
     bcast(r,{t:'peer',peer:view(p)},p);
   } catch(error){if(error.code==='BUSY')err('rate_limit','Muitas tentativas. Aguarde um pouco e tente novamente.');else{console.error('Join failed:',error.message);err('server_error','Não foi possível entrar na sala. Tente novamente.')}}
   finally{p.joining=false}
@@ -138,11 +141,7 @@ function onMsg(p, m) {
       return bcast(r, { t: 'state', id: p.id, st: p.st }, p);
     }
     case 'signal': { const to = r.peers.get(m.to); return to && to.send({ t: 'signal', from: p.id, d: m.d }); }
-    case 'chat': {
-      const text = String(m.text || '').trim().slice(0, 500), now = Date.now();
-      p.rl = (p.rl || []).filter(x => now - x < 5000); if (!text) return; if (p.rl.length >= 8) return err('rate_limit', 'Muitas mensagens. Aguarde um pouco e tente novamente.'); p.rl.push(now);
-      return bcast(r, { t: 'chat', id: p.id, nick: p.nick, text, ts: now });
-    }
+    case 'profile': case 'chat': case 'chat_edit': case 'chat_delete': case 'chat_reaction': case 'game': return features.handle(r,p,m,bcast,err);
     case 'react': return ['👍', '👏', '😂', '🔥', '😮', '❤️'].includes(m.e) && bcast(r, { t: 'react', id: p.id, nick: p.nick, e: m.e });
     case 'nick': {
       const nick = cleanNick(m.nick); if (!nick) return err('bad_nick', 'Nickname inválido.');

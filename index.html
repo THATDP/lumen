@@ -5,6 +5,7 @@
 <title>Lumen — compartilhamento de tela</title>
 <link rel="stylesheet" href="./assets/css/base.css">
 <link rel="stylesheet" href="./assets/css/studio.css">
+<link rel="stylesheet" href="./assets/css/room.css">
 </head>
 <body>
 <section id="welcome"><div class="welcome-shell">
@@ -37,6 +38,7 @@
   <button id="lockBtn" class="ib" data-i="lock" title="Trancar/destrancar sala" hidden></button>
   <span class="sp"></span><div id="tabs"></div><div class="prefs"></div>
   <button class="studio-trigger chip" type="button">✦ &nbsp;Personalizar</button>
+  <button id="room-options-btn" class="chip" type="button">Sala ✧</button>
   <button id="setBtn" class="ib" data-i="gear" title="Configurações" aria-label="Configurações"></button>
 </header>
 <div class="main">
@@ -49,9 +51,9 @@
     <div id="tiles"></div>
   </div>
   <aside class="side">
-    <nav><button data-p="chat" class="on">Chat</button><button data-p="ppl">Pessoas (<span id="pc">1</span>)</button></nav>
+    <nav><button data-p="chat" class="on">Chat</button><button data-p="ppl">Pessoas (<span id="pc">1</span>)</button><button data-p="game">Jogo</button></nav>
     <div id="chat"><div id="msgs" aria-live="polite"></div><button id="unread" class="chip" hidden>Novas mensagens ↓</button><span id="send-status" class="mu" role="status" hidden></span><form id="cf"><input id="ci" maxlength="500" placeholder="Mensagem" autocomplete="off"><button class="ib" data-i="send" aria-label="Enviar"></button></form></div>
-    <div id="ppl" hidden></div>
+    <div id="ppl" hidden></div><div id="game" hidden></div>
   </aside>
 </div>
 <footer>
@@ -63,6 +65,7 @@
   <div id="rx" hidden></div>
 </footer>
 </main>
+<dialog id="room-options" aria-labelledby="room-options-title"><div class="dh"><b id="room-options-title">Experiência da sala</b><button class="ib" id="room-options-close" aria-label="Fechar">✕</button></div><div id="room-options-body"></div></dialog>
 <div id="toasts"></div><div id="banner" hidden></div>
 
 <dialog id="studio" aria-labelledby="studio-title"><div class="studio-head"><div><span class="eyebrow">LUMEN / STUDIO</span><h2 id="studio-title">Seu espaço, do seu jeito.</h2><p>Preferências guardadas apenas neste dispositivo.</p></div><button class="ib" id="studio-close" aria-label="Fechar">✕</button></div><div class="studio-layout"><nav class="studio-nav" aria-label="Personalização"></nav><div class="studio-content" id="studio-content"></div></div></dialog>
@@ -76,5 +79,6 @@
 <script src="./assets/js/ui.js"></script>
 <script src="./assets/js/settings.js"></script>
 <script src="./assets/js/studio.js"></script>
+<script src="./assets/js/room.js"></script>
 </body>
 </html>
