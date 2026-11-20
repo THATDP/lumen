@@ -1,0 +1,95 @@
+.games-hub {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.game-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+.game-card:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+
+/* Chess */
+.chess-layout {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  height: 100%;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.chess-board {
+  display: grid;
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  user-select: none;
+  box-shadow: var(--shadow-md);
+}
+
+.chess-square {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  font-size: 26px;
+  transition: background 80ms ease;
+}
+
+.chess-square.sq-light { background: #e8ecf2; color: #111318; }
+.chess-square.sq-dark { background: #64748b; color: #111318; }
+
+.chess-board.theme-futuristic .sq-light { background: #1e293b; }
+.chess-board.theme-futuristic .sq-dark { background: #0f172a; }
+.chess-board.theme-medieval .sq-light { background: #d6c5a3; }
+.chess-board.theme-medieval .sq-dark { background: #7c5836; }
+.chess-board.theme-space .sq-light { background: #2e1065; }
+.chess-board.theme-space .sq-dark { background: #170838; }
+
+.chess-square.is-selected {
+  box-shadow: inset 0 0 0 3px var(--accent-primary);
+}
+.chess-square.is-legal::after {
+  content: '';
+  width: 28%;
+  height: 28%;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.65);
+}
+.chess-square.is-check {
+  background: rgba(239, 68, 68, 0.7) !important;
+}
+.chess-square.is-void {
+  background: transparent !important;
+  cursor: default;
+  pointer-events: none;
+}
+
+.chess-piece {
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.35));
+}
+.chess-piece.p-w { color: #ffffff; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
+.chess-piece.p-b { color: #111827; text-shadow: 0 1px 2px rgba(255,255,255,0.4); }
+.chess-piece.p-r { color: #ef4444; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+.chess-piece.p-g { color: #10b981; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
