@@ -168,7 +168,7 @@ async function enter(req){
 $('#create').onclick=()=>enter({create:true,name:$('#rname').value,priv:$('#rpriv').checked});
 $('#join').onclick=()=>enter({code:$('#code').value});
 $('#nick').value=myNick;
-const mm=location.pathname.match(/^\/r\/([A-Za-z0-9]{6})/);if(mm)$('#code').value=mm[1].toUpperCase();
+const inviteCode=new URLSearchParams(location.search).get('room');if(inviteCode&&/^[A-Za-z0-9]{6}$/.test(inviteCode))$('#code').value=inviteCode.toUpperCase();
 fetch('https://lumen-server-xiye.onrender.com/api/rooms').then(r=>r.json()).then(l=>l.forEach(r=>{const c=E('button','pub',`${r.name} · ${r.n}`);c.onclick=()=>{$('#code').value=r.code};$('#pubs').append(c)})).catch(()=>{});
 
 function handle(m){
@@ -176,7 +176,7 @@ function handle(m){
   case 'joined':
     me=m.id;room=m.room;role=m.role;inRoom=true;joined=true;retry=0;$('#banner').hidden=true;
     m.peers.forEach(i=>addPeer(i,true));
-    $('#welcome').hidden=true;$('#app').hidden=false;history.replaceState(0,'','/r/'+room.code);
+    $('#welcome').hidden=true;$('#app').hidden=false;history.replaceState(0,'','/lumen/?room='+room.code);
     $('#rn').textContent=room.name;$('#codeBtn').textContent='Código '+room.code;
     sendState();renderAll();sys('Você entrou na sala.');break;
   case 'peer':addPeer(m.peer,false);toast(`${m.peer.nick} entrou`);sys(`${m.peer.nick} entrou.`);renderAll();break;
@@ -197,7 +197,7 @@ function handle(m){
 function leave(msg){
   inRoom=false;joined=false;try{ws&&ws.close()}catch{}
   ['mic','cam','screen'].forEach(dropLocal);peers.forEach(clearPeer);peers.clear();tiles.forEach(t=>t.remove());tiles.clear();
-  view=null;$('#app').hidden=true;$('#welcome').hidden=false;$('#banner').hidden=true;$('#msgs').replaceChildren();history.replaceState(0,'','/');if(msg)werr(msg);
+  view=null;$('#app').hidden=true;$('#welcome').hidden=false;$('#banner').hidden=true;$('#msgs').replaceChildren();history.replaceState(0,'','/lumen/');if(msg)werr(msg);
 }
 
 /* ---------- WebRTC (malha P2P com "perfect negotiation") ---------- */
@@ -370,7 +370,7 @@ $('#cf').onsubmit=e=>{e.preventDefault();const v=$('#ci').value.trim();if(v)tx({
 $('#bRx').onclick=()=>{$('#rx').hidden=!$('#rx').hidden};
 $('#lockBtn').onclick=()=>tx({t:'lock',v:!room.locked});
 
-$('#codeBtn').onclick=()=>navigator.clipboard.writeText(location.origin+'/lumen/r/'+room.code).then(()=>toast('Link de convite copiado'),()=>toast('Código: '+room.code));
+$('#codeBtn').onclick=()=>navigator.clipboard.writeText(location.origin+'/lumen/?room='+room.code).then(()=>toast('Link de convite copiado'),()=>toast('Código: '+room.code));
 document.querySelectorAll('.side nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.side nav button').forEach(x=>x.classList.toggle('on',x===b));$('#chat').hidden=b.dataset.p!=='chat';$('#ppl').hidden=b.dataset.p!=='ppl'});
 const vid=$('#vid'),zset=z=>{zoom=Math.min(4,Math.max(1,z));vid.style.transform=`scale(${zoom})`;$('#zl').textContent=Math.round(zoom*100)+'%'};
 $('#zi').onclick=()=>zset(zoom+.25);$('#zo').onclick=()=>zset(zoom-.25);$('#stage').ondblclick=()=>zset(1);
