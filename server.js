@@ -9,7 +9,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const ICE = [{ urls: (process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',') }];
 if (process.env.TURN_URL) ICE.push({ urls: process.env.TURN_URL.split(','), username: process.env.TURN_USER, credential: process.env.TURN_PASS });
 
-const json = (s, o) => { s.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); s.end(JSON.stringify(o)); };
+const json = (s, o) => { s.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': 'https://thatdp.github.io' }); s.end(JSON.stringify(o)); };
 http.createServer((q, s) => {
   const u = new URL(q.url, 'http://h');
   if (u.pathname === '/api/ice') return json(s, ICE);
