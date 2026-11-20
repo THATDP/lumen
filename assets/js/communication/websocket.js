@@ -2,15 +2,10 @@
 
 import { bus } from '../core/events.js';
 import { state } from '../core/state.js';
+import { CONFIG } from '../core/config.js';
 import { notify } from '../components/notification.js';
 
-const WS_URL = (() => {
-  if (location.hostname === 'thatdp.github.io') return 'wss://lumen-v0q5.onrender.com';
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}`;
-})();
-
-export const API_BASE = location.hostname === 'thatdp.github.io' ? 'https://lumen-v0q5.onrender.com' : '';
+export const API_BASE = CONFIG.API_BASE;
 
 class WSClient {
   constructor() {
@@ -32,7 +27,7 @@ class WSClient {
       return;
     }
 
-    this.ws = new WebSocket(WS_URL);
+    this.ws = new WebSocket(CONFIG.WS_URL);
     this.ws.onopen = () => {
       state.connected = true;
       state.reconnecting = false;

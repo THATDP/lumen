@@ -27,11 +27,27 @@ function iceServers() {
   return result;
 }
 
-const json = (s, o) => { s.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': 'https://thatdp.github.io' }); s.end(JSON.stringify(o)); };
+const CORS_ORIGIN = 'https://thatdp.github.io';
+const corsHeaders = {
+  'access-control-allow-origin': CORS_ORIGIN,
+  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-allow-headers': 'Content-Type',
+  'vary': 'Origin'
+};
+const json = (s, o, status = 200) => {
+  s.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...corsHeaders });
+  s.end(JSON.stringify(o));
+};
 const server = http.createServer((q, s) => {
   let u;try{u=new URL(q.url,'http://localhost')}catch{return s.writeHead(400).end('Bad request')}
+  if (q.method === 'OPTIONS' && u.pathname.startsWith('/api/')) {
+    s.writeHead(204, corsHeaders);
+    return s.end();
+  }
+  if (u.pathname === '/api/health') return json(s, { ok: true, rooms: rooms.size, connections: socks.size });
   if (u.pathname === '/api/ice') return json(s, iceServers());
   if (u.pathname === '/api/rooms') return json(s, [...rooms.values()].filter(r => r.peers.size && !r.priv && !r.locked).map(r => ({ code: r.code, name: r.name, description: r.description, hasPassword: !!r.passwordHash, n: r.peers.size })));
+  if (u.pathname.startsWith('/api/')) return json(s, { error: 'Not found' }, 404);
   // Serve only the public entry point and explicitly scoped static assets.
   const asset = u.pathname.replace(/^\/lumen(?=\/)/, '');
   const isEntry = ['/', '/lumen/', '/index.html'].includes(u.pathname);

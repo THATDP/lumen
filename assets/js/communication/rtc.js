@@ -2,13 +2,14 @@
 
 import { bus } from '../core/events.js';
 import { state } from '../core/state.js';
-import { ws, API_BASE } from './websocket.js';
+import { CONFIG } from '../core/config.js';
+import { ws } from './websocket.js';
 
 let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export async function refreshIce() {
   try {
-    const res = await fetch(`${API_BASE}/api/ice`, { cache: 'no-store' });
+    const res = await fetch(`${CONFIG.API_BASE}${CONFIG.ENDPOINTS.ice}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length) ICE_SERVERS = data;
