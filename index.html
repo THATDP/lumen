@@ -162,14 +162,14 @@ function werr(t){$('#werr').textContent=t}
 async function enter(req){
   const n=$('#nick').value.trim();if(!n)return werr('Escolha um nickname para continuar.');
   myNick=n;LS.set('nick',n);werr('');kicked=false;AC=AC||new AudioContext();
-  try{ICE=await (await fetch('/api/ice')).json()}catch{ICE=[{urls:'stun:stun.l.google.com:19302'}]}
+  try{ICE=await (await fetch('https://lumen-server-xiye.onrender.com/api/ice')).json()}catch{ICE=[{urls:'stun:stun.l.google.com:19302'}]}
   open(req,true);
 }
 $('#create').onclick=()=>enter({create:true,name:$('#rname').value,priv:$('#rpriv').checked});
 $('#join').onclick=()=>enter({code:$('#code').value});
 $('#nick').value=myNick;
 const mm=location.pathname.match(/^\/r\/([A-Za-z0-9]{6})/);if(mm)$('#code').value=mm[1].toUpperCase();
-fetch('/api/rooms').then(r=>r.json()).then(l=>l.forEach(r=>{const c=E('button','pub',`${r.name} · ${r.n}`);c.onclick=()=>{$('#code').value=r.code};$('#pubs').append(c)})).catch(()=>{});
+fetch('https://lumen-server-xiye.onrender.com/api/rooms').then(r=>r.json()).then(l=>l.forEach(r=>{const c=E('button','pub',`${r.name} · ${r.n}`);c.onclick=()=>{$('#code').value=r.code};$('#pubs').append(c)})).catch(()=>{});
 
 function handle(m){
   switch(m.t){
