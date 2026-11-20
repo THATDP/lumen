@@ -369,7 +369,8 @@ $('#cf').onsubmit=e=>{e.preventDefault();const v=$('#ci').value.trim();if(v)tx({
 ['👍','👏','😂','🔥','😮','❤️'].forEach(e=>{const b=E('button','',e);b.onclick=()=>{tx({t:'react',e});$('#rx').hidden=true};$('#rx').append(b)});
 $('#bRx').onclick=()=>{$('#rx').hidden=!$('#rx').hidden};
 $('#lockBtn').onclick=()=>tx({t:'lock',v:!room.locked});
-$('#codeBtn').onclick=()=>navigator.clipboard.writeText(location.origin+'/r/'+room.code).then(()=>toast('Link de convite copiado'),()=>toast('Código: '+room.code));
+
+$('#codeBtn').onclick=()=>navigator.clipboard.writeText(location.origin+'/lumen/r/'+room.code).then(()=>toast('Link de convite copiado'),()=>toast('Código: '+room.code));
 document.querySelectorAll('.side nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.side nav button').forEach(x=>x.classList.toggle('on',x===b));$('#chat').hidden=b.dataset.p!=='chat';$('#ppl').hidden=b.dataset.p!=='ppl'});
 const vid=$('#vid'),zset=z=>{zoom=Math.min(4,Math.max(1,z));vid.style.transform=`scale(${zoom})`;$('#zl').textContent=Math.round(zoom*100)+'%'};
 $('#zi').onclick=()=>zset(zoom+.25);$('#zo').onclick=()=>zset(zoom-.25);$('#stage').ondblclick=()=>zset(1);
