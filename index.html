@@ -145,7 +145,7 @@ function fail(e,what){toast(e.name==='NotAllowedError'?`Permissão negada para $
 
 /* ---------- Conexão com o servidor de sinalização ---------- */
 function open(req,first){
-  const w=ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+  const w=ws=new WebSocket((location.protocol==='https://lumen-server-xiye.onrender.com'?'wss://':'ws://')+location.host);
   w.onopen=()=>tx({t:'join',uid,nick:myNick,...req});
   w.onmessage=e=>handle(JSON.parse(e.data));
   w.onclose=()=>{
