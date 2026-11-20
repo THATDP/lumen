@@ -23,6 +23,7 @@ function client() {
 test('HTTP, room lifecycle, signaling, chat, moderation and reconnect', async () => {
   assert.equal((await fetch(base+'/')).status, 200);
   assert.equal((await fetch(base+'/server.js')).status, 404);
+  assert.equal((await fetch(base+'/lumen/assets/js/rtc.js')).status,200);assert.equal((await fetch(base+'/lumen/assets/css/studio.css')).status,200);assert.equal((await fetch(base+'/lumen/assets/img/lumen-ambient.jpg')).status,200);assert.equal((await fetch(base+'/assets/js/unknown.js')).status,404);
   assert.ok(Array.isArray(await (await fetch(base+'/api/ice')).json()));
   const a=client(), b=client(), c=client(); await Promise.all([a.open(),b.open(),c.open()]);
   a.send({t:'join',nick:'Alice',uid:'unique-a',create:true,priv:false}); const joined=await a.next('joined'); const code=joined.room.code;
@@ -72,6 +73,17 @@ test('ws accepts fragmented messages and isolates signaling by room', async () =
     a.send({t:'signal',to:bj.id,d:{cand:{candidate:'expected'}}});const signal=await b.next('signal');
     assert.equal(signal.from,aj.id);assert.notEqual(signal.from,oj.id);assert.equal(signal.d.cand.candidate,'expected');
   } finally {a.socket.close();b.socket.close();outsider.socket.close()}
+});
+
+test('password protected room verifies secret without exposing it', async () => {
+  const host=client(),guest=client();await Promise.all([host.open(),guest.open()]);
+  try {
+    host.send({t:'join',nick:'Host',uid:'password-host',create:true,priv:false,name:'Sala protegida',description:'Conversa privada',password:'strong-pass'});
+    const hj=await host.next('joined');assert.equal(hj.room.hasPassword,true);assert.equal(hj.room.description,'Conversa privada');assert.ok(!JSON.stringify(hj).includes('strong-pass'));
+    const listed=await (await fetch(base+'/api/rooms')).json();const publicRoom=listed.find(r=>r.code===hj.room.code);assert.equal(publicRoom.hasPassword,true);assert.ok(!JSON.stringify(publicRoom).includes('strong-pass'));
+    guest.send({t:'join',nick:'Guest',uid:'password-guest',code:hj.room.code,password:'wrong'});assert.equal((await guest.next('err')).code,'bad_password');
+    guest.send({t:'join',nick:'Guest',uid:'password-guest',code:hj.room.code,password:'strong-pass'});const gj=await guest.next('joined');assert.equal(gj.room.code,hj.room.code);assert.equal((await host.next('peer')).peer.id,gj.id);
+  } finally {host.socket.close();guest.socket.close()}
 });
 
 test('TURN REST credentials are short-lived and signed', async () => {
@@ -139,4 +151,80 @@ test('browser-to-browser tracks, chat, late join, reconnect and preferences', { 
   await c.locator('#bLeave').click();await a.waitForFunction(()=>peers.size===1,null,{timeout:10000});
   await b.reload();assert.equal(await b.evaluate(()=>document.documentElement.lang),'en');assert.equal(await b.evaluate(()=>document.documentElement.dataset.theme),'light');
   assert.deepEqual(errors,[]);
+});
+
+test('local studio themes, profile images and wallpapers persist without being shared', {timeout:90000}, async () => {
+  const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const sent=[];await page.addInitScript(()=>{const send=WebSocket.prototype.send;WebSocket.prototype.send=function(data){(window.__sent||(window.__sent=[])).push(data);return send.call(this,data)}});
+  await page.goto(base+'/lumen/');await page.locator('#welcome .prefs select').first().selectOption('en');await page.getByRole('button',{name:'✦  Customize'}).first().click();await page.getByText('An atmosphere for every moment.').waitFor();await page.locator('#studio-close').click();await page.locator('#welcome .prefs select').first().selectOption('pt-BR');await page.locator('#welcome .studio-trigger').click();
+  await page.getByRole('button',{name:'Ocean',exact:true}).click();
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--bg')),'#061b24');
+  await page.getByRole('button',{name:'Criar tema',exact:true}).click();
+  await page.getByLabel('Nome do tema').fill('Meu azul');
+  await page.getByLabel('Destaque e botões').fill('#123456');await page.getByLabel('Opacidade dos painéis').fill('80');
+  await page.getByRole('button',{name:'Salvar tema',exact:true}).click();
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--ac')),'#123456');
+  await page.getByRole('button',{name:/Perfil local/}).click();
+  await page.getByLabel('Nome de exibição').fill('Pessoa Local');
+  await page.getByLabel('Nome de usuário local').fill('pessoa');
+  await page.getByLabel('Sobre você').fill('Dados privados');
+  const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=8;c.height=8;c.getContext('2d').fillRect(0,0,8,8);return c.toDataURL('image/png').split(',')[1]});
+  const image={name:'avatar.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')};
+  await page.getByLabel(/Foto de perfil/).setInputFiles(image);await page.waitForFunction(()=>document.querySelector('.profile-avatar').style.backgroundImage.includes('blob:'));
+  await page.getByLabel(/Banner ·/).setInputFiles(image);await page.waitForFunction(()=>document.querySelector('.profile-banner').style.backgroundImage.includes('blob:'));
+  await page.getByRole('button',{name:'Salvar perfil',exact:true}).click();
+  await page.getByRole('button',{name:/Papéis de parede/}).click();
+  await page.getByLabel(/Importar imagem/).setInputFiles(image);await page.waitForFunction(()=>document.documentElement.style.getPropertyValue('--wp-home').includes('blob:'));
+  await page.getByLabel('Opacidade').fill('40');await page.getByLabel('Escala').fill('140');
+  await page.getByRole('button',{name:/Acessibilidade/}).click();await page.getByLabel('Tamanho do texto').fill('120');await page.getByLabel('Reduzir animações').check();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.reload();await page.locator('#welcome .studio-trigger').click();
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--ac')),'#123456');assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--panel-opacity')),'80%');
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.reduceMotion),'true');assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--text-scale')),'1.2');
+  await page.getByRole('button',{name:/Perfil local/}).click();
+  assert.equal(await page.getByLabel('Nome de exibição').inputValue(),'Pessoa Local');
+  assert.equal(await page.getByLabel('Sobre você').inputValue(),'Dados privados');
+  await page.waitForFunction(()=>document.querySelector('.profile-avatar').style.backgroundImage.includes('blob:'));
+  await page.waitForFunction(()=>document.querySelector('.profile-banner').style.backgroundImage.includes('blob:'));
+  await page.getByRole('button',{name:/Papéis de parede/}).click();
+  assert.equal(await page.getByLabel('Opacidade').inputValue(),'40');assert.equal(await page.getByLabel('Escala').inputValue(),'140');
+  await page.waitForFunction(()=>document.documentElement.style.getPropertyValue('--wp-home').includes('blob:'));
+  await page.getByLabel(/Importar imagem/).setInputFiles({name:'bad.png',mimeType:'image/png',buffer:Buffer.from('not an image')});
+  await page.getByText('O arquivo não é uma imagem válida.').waitFor();
+  await page.getByRole('button',{name:/Temas/}).click();
+  await page.locator('input[accept="application/json,.json"]').setInputFiles({name:'theme.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({name:'Importado',colors:['#111111','#222222','#333333','#444444','#eeeeee','#aaaaaa','#abcdef','#ee8899','#88eeaa']}))});
+  assert.equal(await page.getByLabel('Nome do tema').inputValue(),'Importado');
+  const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Exportar',exact:true}).click();const download=await downloadPromise;const exported=JSON.parse(require('node:fs').readFileSync(await download.path(),'utf8'));assert.equal(exported.name,'Importado');assert.equal(exported.colors[6],'#abcdef');
+  await page.getByRole('button',{name:'Salvar tema',exact:true}).click();
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--ac')),'#abcdef');
+  await page.locator('#studio-close').click();await page.locator('#nick').fill('RoomName');await page.locator('#create').click();await page.locator('#app').waitFor({state:'visible'});
+  sent.push(...await page.evaluate(()=>window.__sent||[]));assert.ok(sent.some(m=>m.includes('RoomName')));assert.ok(sent.every(m=>!m.includes('Pessoa Local')&&!m.includes('Dados privados')&&!m.includes('base64')));
+  assert.deepEqual(errors,[]);
+});
+
+
+test('password room works through browser and reconnect', {timeout:60000}, async () => {
+  const context=await browser.newContext(),a=await context.newPage(),b=await context.newPage();
+  await Promise.all([a.goto(base+'/lumen/'),b.goto(base+'/lumen/')]);
+  await a.locator('#welcome .prefs select').first().selectOption('pt-BR');
+  await a.locator('#nick').fill('HostBrowser');await a.locator('.room-options').first().locator('summary').click();
+  await a.locator('#rdesc').fill('Private meeting');await a.locator('#rpassword').fill('secret123');await a.locator('#create').click();await a.locator('#app').waitFor({state:'visible'});
+  const code=await a.evaluate(()=>room.code);assert.equal(await a.evaluate(()=>room.description),'Private meeting');
+  await b.locator('#nick').fill('GuestBrowser');await b.locator('#code').fill(code);await b.locator('.join-options summary').click();await b.locator('#join-password').fill('wrong');await b.locator('#join').click();
+  await b.waitForFunction(()=>document.querySelector('#werr').textContent.length>0);await b.locator('#join-password').fill('secret123');await b.locator('#join').click();await b.locator('#app').waitFor({state:'visible'});
+  await a.waitForFunction(()=>peers.size===1);const old=await b.evaluate(()=>me);await b.evaluate(()=>ws.close());await b.waitForFunction(old=>joined&&me!==old,old,{timeout:30000});await a.waitForFunction(()=>peers.size===1);
+  for(let i=0;i<8;i++){await b.locator('#ci').fill('message '+i);await b.locator('#ci').press('Enter');await b.waitForFunction(()=>pendingChat===null)}
+  await b.locator('#ci').fill('keep this message');await b.locator('#ci').press('Enter');await b.waitForFunction(()=>document.querySelector('#ci').value==='keep this message');assert.equal(await b.locator('#cf button').isEnabled(),true);
+});
+
+test('responsive layout and keyboard access to personalization', {timeout:60000}, async () => {
+  const context=await browser.newContext(),page=await context.newPage();
+  for(const width of [320,768,1440]){
+    await page.setViewportSize({width,height:800});await page.goto(base+'/lumen/');
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`horizontal overflow at ${width}px`);
+    const trigger=page.locator('#welcome .studio-trigger');await trigger.focus();await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#studio').isVisible(),true);
+    await page.keyboard.press('Escape');assert.equal(await page.locator('#studio').isVisible(),false);
+  }
 });

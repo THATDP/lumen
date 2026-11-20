@@ -4,6 +4,14 @@
 // A mídia usa conexões P2P ou um servidor TURN externo, nunca o servidor de sinalização.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
+const { promisify } = require('util');
+const scrypt = promisify(crypto.scrypt);
+let passwordWork=0;
+async function derivePassword(password,salt){
+  if(passwordWork>=8){const error=new Error('Authentication busy');error.code='BUSY';throw error}
+  passwordWork++;
+  try{return await scrypt(password,salt,32)}finally{passwordWork--}
+}
 const PORT = +process.env.PORT || 3000, MAX = +process.env.MAX_PEERS || 8;
 const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', rooms = new Map(), socks = new Set();
 const ICE = [{ urls: (process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',').map(x => x.trim()).filter(Boolean) }];
@@ -15,22 +23,24 @@ function iceServers() {
     const username = `${Math.floor(Date.now() / 1000) + ttl}:${crypto.randomBytes(12).toString('hex')}`;
     const credential = crypto.createHmac('sha1', process.env.TURN_SECRET).update(username).digest('base64');
     result.push({ urls: turnUrls, username, credential });
-  } else if (turnUrls.length && process.env.TURN_USER && process.env.TURN_PASS) {
-    result.push({ urls: turnUrls, username: process.env.TURN_USER, credential: process.env.TURN_PASS });
   }
   return result;
 }
 
 const json = (s, o) => { s.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': 'https://thatdp.github.io' }); s.end(JSON.stringify(o)); };
 const server = http.createServer((q, s) => {
-  const u = new URL(q.url, 'http://localhost');
+  let u;try{u=new URL(q.url,'http://localhost')}catch{return s.writeHead(400).end('Bad request')}
   if (u.pathname === '/api/ice') return json(s, iceServers());
-  if (u.pathname === '/api/rooms') return json(s, [...rooms.values()].filter(r => r.peers.size && !r.priv && !r.locked).map(r => ({ code: r.code, name: r.name, n: r.peers.size })));
-  // Serve only the public entry point, never server source or environment files.
-  if (!['/', '/lumen/', '/index.html'].includes(u.pathname)) return s.writeHead(404).end('404');
-  fs.readFile(path.join(__dirname, 'index.html'), (e, d) => {
-    if (e) return s.writeHead(500).end('Unable to load application');
-    s.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); s.end(d);
+  if (u.pathname === '/api/rooms') return json(s, [...rooms.values()].filter(r => r.peers.size && !r.priv && !r.locked).map(r => ({ code: r.code, name: r.name, description: r.description, hasPassword: !!r.passwordHash, n: r.peers.size })));
+  // Serve only the public entry point and explicitly scoped static assets.
+  const asset = u.pathname.replace(/^\/lumen(?=\/)/, '');
+  const isEntry = ['/', '/lumen/', '/index.html'].includes(u.pathname);
+  if (!isEntry && !/^\/assets\/(?:css\/[a-z0-9-]+\.css|js\/[a-z0-9-]+\.js|img\/[a-z0-9-]+\.jpg)$/.test(asset)) return s.writeHead(404).end('404');
+  const file = isEntry ? 'index.html' : asset.slice(1);
+  fs.readFile(path.join(__dirname, file), (e, d) => {
+    if (e) return s.writeHead(404).end('Not found');
+    const type = isEntry ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.jpg') ? 'image/jpeg' : 'text/javascript';
+    s.writeHead(200, { 'content-type': type + (file.endsWith('.jpg') ? '' : '; charset=utf-8'), 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); s.end(d);
   });
 });
 const wss = new WebSocketServer({ server, maxPayload: 65536, perMessageDeflate: false });
@@ -41,6 +51,8 @@ wss.on('connection', socket => {
   socket.on('pong', () => { p.alive = true; });
   socket.on('message', (data, binary) => {
     if (binary) return;
+    const now=Date.now();p.messages=(p.messages||[]).filter(ts=>now-ts<10000);
+    if(p.messages.length>=300){socket.close(1008,'rate limit');return}p.messages.push(now);
     try { const m = JSON.parse(data.toString()); if (m && typeof m === 'object' && !Array.isArray(m)) onMsg(p, m); } catch (e) { console.warn('Invalid message:', e.message); }
   });
   socket.on('close', () => { socks.delete(p); drop(p, 'left'); });
@@ -69,35 +81,52 @@ function drop(p, why) {
   }
 }
 
+async function joinRoom(p, m) {
+  if (p.room || p.joining) return;
+  const err = (code, text) => p.send({t:'err',code,text});
+  const nick = cleanNick(m.nick);
+  if (!nick) return err('bad_nick', 'Nickname inválido: use de 2 a 20 letras, números, espaço, _ . -');
+  if (m.password != null && (typeof m.password !== 'string' || m.password.length > 128)) return err('password_invalid','Senha inválida. Use até 128 caracteres.');
+  const uid=typeof m.uid==='string'?m.uid.slice(0,64):'', password=m.password||'';
+  p.joining=true;
+  try {
+    let r;
+    if(m.create){
+      let passwordHash=null,passwordSalt=null;
+      if(password){passwordSalt=crypto.randomBytes(16);passwordHash=await derivePassword(password,passwordSalt)}
+      if(p.socket.readyState!==WebSocket.OPEN)return;
+      let code;do code=Array.from({length:6},()=>ALPHA[crypto.randomInt(ALPHA.length)]).join('');while(rooms.has(code));
+      r={code,name:String(m.name||'').trim().slice(0,40)||'Sala de '+nick,description:String(m.description||'').trim().slice(0,160),priv:m.priv!==false,locked:false,peers:new Map(),reservations:new Map(),timer:null,passwordHash,passwordSalt};
+      rooms.set(code,r);
+    } else {
+      r=rooms.get(String(m.code||'').trim().toUpperCase());
+      if(!r)return err('no_room','Sala não encontrada. Confira o código.');
+      if(r.passwordHash){
+        const now=Date.now();r.passwordTries=(r.passwordTries||[]).filter(ts=>now-ts<60000);
+        if(r.passwordTries.length>=20)return err('rate_limit','Muitas tentativas. Aguarde um pouco e tente novamente.');
+        r.passwordTries.push(now);
+        const hash=await derivePassword(password,r.passwordSalt);
+        if(p.socket.readyState!==WebSocket.OPEN)return;
+        if(!crypto.timingSafeEqual(hash,r.passwordHash))return err('bad_password','Senha incorreta.');
+        if(rooms.get(r.code)!==r)return err('no_room','Sala não encontrada. Confira o código.');
+      }
+    }
+    if(p.socket.readyState!==WebSocket.OPEN||p.room)return;
+    const active=uid&&[...r.peers.values()].find(x=>x.uid===uid),returning=uid&&r.reservations.get(uid)>Date.now();
+    if(r.locked&&!returning&&!active)return err('locked','Esta sala está trancada pelo administrador.');
+    if(r.peers.size>=MAX&&!active)return err('full','Sala cheia (limite de '+MAX+' participantes).');
+    if(nickTaken(r,nick,active))return err('nick_taken','O nickname "'+nick+'" já está em uso nesta sala. Escolha outro.');
+    if(active){drop(active,'replaced');active.socket.close()}
+    clearTimeout(r.timer);r.timer=null;for(const [id,expires] of r.reservations)if(expires<=Date.now())r.reservations.delete(id);r.reservations.delete(uid);
+    Object.assign(p,{uid,nick,room:r,role:r.peers.size?'user':'host',st:{}});r.peers.set(p.id,p);
+    p.send({t:'joined',id:p.id,role:p.role,room:{code:r.code,name:r.name,description:r.description,hasPassword:!!r.passwordHash,priv:r.priv,locked:r.locked},peers:[...r.peers.values()].filter(x=>x!==p).map(view)});
+    bcast(r,{t:'peer',peer:view(p)},p);
+  } catch(error){if(error.code==='BUSY')err('rate_limit','Muitas tentativas. Aguarde um pouco e tente novamente.');else{console.error('Join failed:',error.message);err('server_error','Não foi possível entrar na sala. Tente novamente.')}}
+  finally{p.joining=false}
+}
 function onMsg(p, m) {
   const err = (code, text) => p.send({ t: 'err', code, text });
-  if (m.t === 'join') {
-    if (p.room) return;
-    const nick = cleanNick(m.nick); if (!nick) return err('bad_nick', 'Nickname inválido: use de 2 a 20 letras, números, espaço, _ . -');
-    const uid = typeof m.uid === 'string' ? m.uid.slice(0, 64) : '';
-    let r;
-    if (m.create) {
-      let c; do c = Array.from({ length: 6 }, () => ALPHA[crypto.randomInt(ALPHA.length)]).join(''); while (rooms.has(c));
-      r = { code: c, name: String(m.name || '').trim().slice(0, 40) || 'Sala de ' + nick, priv: m.priv !== false, locked: false, peers: new Map(), reservations: new Map(), timer: null };
-      rooms.set(c, r);
-    } else {
-      r = rooms.get(String(m.code || '').trim().toUpperCase());
-      if (!r) return err('no_room', 'Sala não encontrada. Confira o código.');
-    }
-    const active = uid && [...r.peers.values()].find(x => x.uid === uid);
-    const returning = uid && r.reservations.get(uid) > Date.now();
-    if (r.locked && !returning && !active) return err('locked', 'Esta sala está trancada pelo administrador.');
-    if (r.peers.size >= MAX && !active) return err('full', 'Sala cheia (limite de ' + MAX + ' participantes).');
-    // Validate the nickname before replacing the old session: a rejected join must not evict it.
-    const dup = nickTaken(r, nick, active);
-    if (dup) return err('nick_taken', 'O nickname "' + nick + '" já está em uso nesta sala. Escolha outro.');
-    if (active) { drop(active, 'replaced'); active.socket.close(); }
-    clearTimeout(r.timer); r.timer = null; for (const [id, expires] of r.reservations) if (expires <= Date.now()) r.reservations.delete(id); r.reservations.delete(uid);
-    Object.assign(p, { uid, nick, room: r, role: r.peers.size ? 'user' : 'host', st: {} });
-    r.peers.set(p.id, p);
-    p.send({ t: 'joined', id: p.id, role: p.role, room: { code: r.code, name: r.name, priv: r.priv, locked: r.locked }, peers: [...r.peers.values()].filter(x => x !== p).map(view) });
-    return bcast(r, { t: 'peer', peer: view(p) }, p);
-  }
+  if (m.t === 'join') { void joinRoom(p,m); return; }
   const r = p.room; if (!r) return;
   const tg = r.peers.get(m.id), isMod = p.role === 'host' || p.role === 'mod';
   switch (m.t) {
