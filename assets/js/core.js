@@ -144,7 +144,7 @@ const cfg={...DEF,...LS.get('cfg',{})};
 let uid=sessionStorage.getItem('lumen-uid');if(!uid){uid=crypto.randomUUID();sessionStorage.setItem('lumen-uid',uid)}
 let myNick=LS.get('nick','');
 
-const API=location.hostname==='thatdp.github.io'?'https://lumen-server-xiye.onrender.com':location.origin;
+const API=location.hostname==='thatdp.github.io'?'https://lumen-2o65.onrender.com':location.origin;
 let joinSecret='',connectStarted=0;
 let ws,me,room,role,peers=new Map(),ICE=[],inRoom=false,joined=false,kicked=false,retry=0,view=null,zoom=1,lastWatch,AC,attempt=0,retryTimer,iceRefreshTimer,connecting=false;
 const local={mic:null,cam:null,screen:null};
